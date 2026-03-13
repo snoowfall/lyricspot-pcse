@@ -49,7 +49,7 @@ class poller:
         if not meta:
             return None
 
-        parts = meta.split("|")
+        parts = meta.split("|", 4)
         if len(parts) < 5:
             return None
 
