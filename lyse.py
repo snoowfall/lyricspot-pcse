@@ -4,11 +4,12 @@
 # make a pr if you have something to share, or suggest cool stuff in discussions
 # https://github.com/snoowfall/lyse 
 
-__version__ = "2.1.1"
+__version__ = "2.1.2"
 # full rewrite done in 2.0.0 to remove traces of ex-fork code
 # qol updates in 2.1.0
-# > stdout piping in 2.1.1 (suggested by u/shadowe1ite) 
- 
+# stdout piping in 2.1.1 (suggested by u/shadowe1ite) 
+# > fixes 
+
 import os
 import sys
 import time
@@ -49,7 +50,7 @@ class poller:
         if not meta:
             return None
 
-        parts = meta.split("|")
+        parts = meta.split("|", 4)
         if len(parts) < 5:
             return None
 
