@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-__version__ = "2.1.0"
+
+# lyse | realtime tui lyrics for your favorite songs, directly in the terminal.
+# make a pr if you have something to share, or suggest cool stuff in discussions
+# https://github.com/snoowfall/lyse 
+
+__version__ = "2.1.1"
 # full rewrite done in 2.0.0 to remove traces of ex-fork code
+# qol updates in 2.1.0
+# > stdout piping in 2.1.1 (suggested by u/shadowe1ite) 
  
 import os
 import sys
@@ -13,9 +20,10 @@ import json
 import re
 import subprocess
 import curses
+import argparse
 
 LRCLIB_URL = "https://lrclib.net/api/get"
-POLL_INTERVAL = 0.5 # :3
+POLL_INTERVAL = 0.25 # :3
 OFFSET_STEP = 0.25
 
 CONFIG_DIR  = os.path.expanduser("~/.config/lyse")
@@ -213,6 +221,60 @@ class Lyse:
         threading.Thread(target=self._poll, daemon=True).start()
         curses.wrapper(self._main_loop)
 
+    def run_pipe_mode(self, live=False):
+        self.offset = self._load_settings().get("offset", 0.0)  # probably will help someone someday
+        track = self.poller.now_playing()
+        if not track:
+            print("No track playing", file=sys.stderr)
+            sys.exit(1)
+    
+        self.lyrics, self.synced = self._fetch_lyrics(
+            track["title"], track["artist"], track["album"], track["duration"]
+        )
+    
+        if live:
+            last_line = None
+            try:
+                while True:
+                    track = self.poller.now_playing()
+                    if not track:
+                        if last_line is not None:   
+                            print("nothing playing")
+                            sys.stdout.flush()
+                            last_line = None
+                        time.sleep(2)
+                        continue
+    
+                    progress = track["progress"] + self.offset
+                    current = self._get_current_lyric(progress)
+    
+                    if current != last_line:
+                        print(current)
+                        sys.stdout.flush()
+                        last_line = current
+    
+                    time.sleep(0.8)
+            except KeyboardInterrupt:
+                print("\nStopped", file=sys.stderr)
+        else: # oneshot as in the game oneshot
+            progress = track["progress"] + self.offset
+            current = self._get_current_lyric(progress)
+            print(current)
+
+    def _get_current_lyric(self, progress):
+        if not self.lyrics:
+            return "No lyrics"
+    
+        if not self.synced:
+            return " | ".join(text for _, text in self.lyrics) or "No lyrics"
+    
+        current = "♪"
+        for ts, text in self.lyrics:
+            if ts > progress:
+                break
+            current = text
+        return current.strip() or "♪"
+    
     def _main_loop(self, scr):
         curses.curs_set(0)
         curses.start_color()
@@ -227,10 +289,10 @@ class Lyse:
             if key in (ord('q'), ord('Q'), 27):
                 break
 
-            if key in (curses.KEY_UP, ord('k')):
+            if key == ord('k'):
                 self.offset = round(self.offset + OFFSET_STEP, 2)
                 self._save_settings()
-            if key in (curses.KEY_DOWN, ord('j')):
+            if key == ord('j'):
                 self.offset = round(self.offset - OFFSET_STEP, 2)
                 self._save_settings()
 
@@ -358,12 +420,23 @@ class Lyse:
 
 
 def main():
-    if "--reset" in sys.argv:
+    parser = argparse.ArgumentParser(description="Lyse - terminal lyrics viewer")
+    parser.add_argument('--reset', action='store_true', help="Reset settings")
+    parser.add_argument('--pipe', action='store_true', help="Output current lyrics to stdout (non-interactive)")
+    parser.add_argument('--live', action='store_true', help="With --pipe: continuously update stdout")
+    args = parser.parse_args() 
+
+    if args.reset:
         try:
             os.remove(CONFIG_FILE)
             print("config nuked")
         except:
-            print("no config")
+            print("no config found")
+        return
+        
+    if args.pipe:
+        lyse = Lyse()
+        lyse.run_pipe_mode(live=args.live)
         return
     
     signal.signal(signal.SIGINT, lambda *a: sys.exit(0))
