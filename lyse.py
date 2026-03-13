@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-__version__ = "2.0.0"
-# full rewrite to remove traces of ex-fork code
+__version__ = "2.1.0"
+# full rewrite done in 2.0.0 to remove traces of ex-fork code
  
 import os
 import sys
@@ -168,11 +168,18 @@ class Lyse:
             track = self.poller.now_playing()
             with self.lock:
                 self.track = track
-                if track and track["track_id"] != self._last_id:
+                if track and track["track_id"] and track["track_id"] != self._last_id: # should(?) fix issues with some players
                     self._last_id = track["track_id"]
-                    self.lyrics, self.synced = self._fetch_lyrics(
-                        track["title"], track["artist"], track["album"], track["duration"]
-                    )
+                    self.lyrics = [(0, "loading lyrics, hang on")]
+                    self.synced = False
+                    t = track.copy()
+                    def _do_fetch(t=t):
+                        lyrics, synced = self._fetch_lyrics(t["title"], t["artist"], t["album"], t["duration"])
+                        with self.lock:
+                            if self._last_id == t["track_id"]:
+                                self.lyrics = lyrics
+                                self.synced = synced
+                    threading.Thread(target=_do_fetch, daemon=True).start()
             time.sleep(POLL_INTERVAL)
 
     def _apply_colors(self, scr):
@@ -191,9 +198,9 @@ class Lyse:
         curses.init_pair(2, 252, -1)
         curses.init_pair(3, 249, -1)
         curses.init_pair(4, 245, -1)
-        curses.init_pair(5, 240, -1)
-        curses.init_pair(6, 238, -1)
-        curses.init_pair(7, 236, -1)
+        curses.init_pair(5, 243, -1)
+        curses.init_pair(6, 239, -1)
+        curses.init_pair(7, 237, -1) # 1 step lighter than it was before because it was kinda hard to read
 
     def _place_line(self, text, width):
         if self.lyrics_centered:
@@ -243,6 +250,11 @@ class Lyse:
                 self.dim_inactive = not self.dim_inactive
                 self._save_settings()
 
+            if key == curses.KEY_RIGHT:
+                subprocess.Popen(["playerctl", "position", f"{5}+"], stderr=subprocess.DEVNULL)
+            if key == curses.KEY_LEFT:
+                subprocess.Popen(["playerctl", "position", f"{5}-"], stderr=subprocess.DEVNULL)
+
             with self.lock:
                 track  = self.track
                 lyrics = list(self.lyrics)
@@ -260,7 +272,7 @@ class Lyse:
                     "playerctl ghosted me again",
                     "where are the tunes"
                 ]
-                msg = idles[int(time.time()) % len(idles)]
+                msg = idles[(int(time.time()) // 5) % len(idles)]
                 scr.addstr(h//2, max(0, (w - len(msg))//2), msg, curses.A_DIM)
                 scr.refresh()
                 time.sleep(0.5)
@@ -275,7 +287,7 @@ class Lyse:
                 status_x = max(20, w - len(status) - 2)
 
                 title_x = 2
-                scr.addstr(0, title_x, title,  curses.color_pair(3) | curses.A_BOLD)
+                scr.addstr(0, title_x, title,  curses.color_pair(2) | curses.A_BOLD)
                 if artist and title_x + len(title) + len(artist) < status_x - 2:
                     scr.addstr(0, title_x + len(title), artist, curses.color_pair(2) | curses.A_DIM)
 
@@ -283,7 +295,7 @@ class Lyse:
 
                 bar_left = 2
                 bar_w    = w - 4          
-                bar_w    = max(30, bar_w)
+                bar_w    = max(1, w - 4) 
                                 
                 prog = track["progress"]
                 dur  = track["duration"] or 1
@@ -292,7 +304,7 @@ class Lyse:
                 bar_filled   = "━" * filled_w
                 bar_unfilled = "━" * (bar_w - filled_w)
                                 
-                scr.addstr(1, bar_left, bar_filled,   curses.color_pair(4))
+                scr.addstr(1, bar_left, bar_filled,   curses.color_pair(3))
                 if bar_unfilled:
                     scr.addstr(1, bar_left + filled_w, bar_unfilled, curses.color_pair(5) | curses.A_DIM)
                                 
@@ -319,7 +331,7 @@ class Lyse:
                 dist = idx - cur_idx if synced else 0
 
                 if not synced:
-                    line = f" {text}"
+                    line = f"  {text}"
                     attr = curses.color_pair(1)
                 else:
                     if dist == 0:
@@ -328,10 +340,16 @@ class Lyse:
                         attr = curses.color_pair(1) | (curses.A_BOLD if self.bold_current else 0)
                     elif dist > 0:
                         line = f"  {text}"
-                        attr = curses.color_pair(2 if dist == 1 else 3 if dist <= 3 else 4)
+                        if self.dim_inactive:
+                            attr = curses.color_pair(2 if dist == 1 else 3 if dist <= 3 else 4)
+                        else:
+                            attr = curses.color_pair(1) # forgot to add these back in previously lolz
                     else:
                         line = f"  {text}"
-                        attr = curses.color_pair(5 if dist == -1 else 6 if dist >= -3 else 7)
+                        if self.dim_inactive:
+                            attr = curses.color_pair(5 if dist == -1 else 6 if dist >= -3 else 7)
+                        else:
+                            attr = curses.color_pair(1)
 
                 x, clipped = self._place_line(line, w)
                 scr.addstr(lyric_start + row, x, clipped, attr)
