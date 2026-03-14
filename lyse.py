@@ -4,7 +4,7 @@
 # make a pr if you have something to share, or suggest cool stuff in discussions
 # https://github.com/snoowfall/lyse 
 
-__version__ = "2.1.2"
+__version__ = "2.1.3"
 # full rewrite done in 2.0.0 to remove traces of ex-fork code
 # qol updates in 2.1.0
 # stdout piping in 2.1.1 (suggested by u/shadowe1ite) 
@@ -22,6 +22,7 @@ import re
 import subprocess
 import curses
 import argparse
+import shutil
 
 LRCLIB_URL = "https://lrclib.net/api/get"
 POLL_INTERVAL = 0.25 # :3
@@ -421,6 +422,10 @@ class Lyse:
 
 
 def main():
+    if not shutil.which("playerctl"):
+        print("playerctl not found, install it first")
+        sys.exit(1)
+
     parser = argparse.ArgumentParser(description="Lyse - terminal lyrics viewer")
     parser.add_argument('--reset', action='store_true', help="Reset settings")
     parser.add_argument('--pipe', action='store_true', help="Output current lyrics to stdout (non-interactive)")
