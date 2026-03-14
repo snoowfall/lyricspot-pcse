@@ -4,11 +4,13 @@
 # make a pr if you have something to share, or suggest cool stuff in discussions
 # https://github.com/snoowfall/lyse 
 
-__version__ = "2.1.3"
+__version__ = "2.2.0"
 # full rewrite done in 2.0.0 to remove traces of ex-fork code
 # qol updates in 2.1.0
 # stdout piping in 2.1.1 (suggested by u/shadowe1ite) 
-# > fixes 
+# 2.1.2-2.1.3 fixes 
+# 2.2.0 customizable colors through the json (~/.config/lyse/), thanks hooxoo
+
 
 import os
 import sys
@@ -96,7 +98,20 @@ class Lyse:
         self.standout        = False
         self.dim_inactive    = saved.get("dim_inactive", True)
         self.offset          = saved.get("offset", 0.0)
-
+        colors = saved.get("colors", {})
+        self.col_current      = colors.get("current", 231)
+        self.col_ahead_close  = colors.get("ahead_close", 252)
+        self.col_ahead_mid    = colors.get("ahead_mid", 249)
+        self.col_ahead_far    = colors.get("ahead_far", 245)
+        self.col_behind_close = colors.get("behind_close", 243)
+        self.col_behind_mid   = colors.get("behind_mid", 239)
+        self.col_behind_far   = colors.get("behind_far", 237)
+        self.col_bar_filled   = colors.get("bar_filled", 249)
+        self.col_bar_empty    = colors.get("bar_empty", 243)
+        self.col_title        = colors.get("title", 252)
+        self.col_artist       = colors.get("artist", 252)
+        self.col_status       = colors.get("status", 252)
+        
     def _load_settings(self):
         try:
             with open(CONFIG_FILE) as f:
@@ -116,6 +131,20 @@ class Lyse:
                 "standout": self.standout,
                 "dim_inactive": self.dim_inactive,
                 "offset": self.offset,
+                "colors": {
+                    "current":      self.col_current,
+                    "ahead_close":  self.col_ahead_close,
+                    "ahead_mid":    self.col_ahead_mid,
+                    "ahead_far":    self.col_ahead_far,
+                    "behind_close": self.col_behind_close,
+                    "behind_mid":   self.col_behind_mid,
+                    "behind_far":   self.col_behind_far,
+                    "bar_filled":   self.col_bar_filled,
+                    "bar_empty":    self.col_bar_empty,
+                    "title":        self.col_title,
+                    "artist":       self.col_artist,
+                    "status":       self.col_status,
+                },
             }
             with open(CONFIG_FILE, "w") as f:
                 json.dump(data, f, indent=2)
@@ -193,24 +222,23 @@ class Lyse:
             time.sleep(POLL_INTERVAL)
 
     def _apply_colors(self, scr):
-        # no truecolor for u :/
         if curses.COLORS < 8:
             for i in range(1, 8):
                 curses.init_pair(i, curses.COLOR_WHITE, -1)
             return
-
-        term = os.getenv("TERM", "").lower()
-        if "kitty" in term or "alacritty" in term:
-            curses.init_pair(1, 231, -1)
-        else:
-            curses.init_pair(1, 255, -1)
-
-        curses.init_pair(2, 252, -1)
-        curses.init_pair(3, 249, -1)
-        curses.init_pair(4, 245, -1)
-        curses.init_pair(5, 243, -1)
-        curses.init_pair(6, 239, -1)
-        curses.init_pair(7, 237, -1) # 1 step lighter than it was before because it was kinda hard to read
+    
+        curses.init_pair(1, self.col_current, -1)
+        curses.init_pair(2, self.col_ahead_close, -1)
+        curses.init_pair(3, self.col_ahead_mid, -1)
+        curses.init_pair(4, self.col_ahead_far, -1)
+        curses.init_pair(5, self.col_behind_close, -1)
+        curses.init_pair(6, self.col_behind_mid, -1)
+        curses.init_pair(7, self.col_behind_far, -1)
+        curses.init_pair(8, self.col_bar_filled, -1)
+        curses.init_pair(9, self.col_bar_empty, -1)
+        curses.init_pair(10, self.col_title, -1)
+        curses.init_pair(11, self.col_artist, -1)
+        curses.init_pair(12, self.col_status, -1)
 
     def _place_line(self, text, width):
         if self.lyrics_centered:
@@ -351,11 +379,11 @@ class Lyse:
                 status_x = max(20, w - len(status) - 2)
 
                 title_x = 2
-                scr.addstr(0, title_x, title,  curses.color_pair(2) | curses.A_BOLD)
+                scr.addstr(0, title_x, title,  curses.color_pair(10) | curses.A_BOLD)
                 if artist and title_x + len(title) + len(artist) < status_x - 2:
-                    scr.addstr(0, title_x + len(title), artist, curses.color_pair(2) | curses.A_DIM)
+                    scr.addstr(0, title_x + len(title), artist, curses.color_pair(11) | curses.A_DIM)
 
-                scr.addstr(0, status_x, status, curses.color_pair(2) | curses.A_DIM)
+                scr.addstr(0, status_x, status, curses.color_pair(12) | curses.A_DIM)
 
                 bar_left = 2
                 bar_w    = w - 4          
@@ -368,9 +396,9 @@ class Lyse:
                 bar_filled   = "━" * filled_w
                 bar_unfilled = "━" * (bar_w - filled_w)
                                 
-                scr.addstr(1, bar_left, bar_filled,   curses.color_pair(3))
+                scr.addstr(1, bar_left, bar_filled,   curses.color_pair(8))
                 if bar_unfilled:
-                    scr.addstr(1, bar_left + filled_w, bar_unfilled, curses.color_pair(5) | curses.A_DIM)
+                    scr.addstr(1,bar_left + filled_w, bar_unfilled, curses.color_pair(9) | curses.A_DIM)
                                 
                 lyric_start = 3
                 
