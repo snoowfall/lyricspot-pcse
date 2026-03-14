@@ -27,6 +27,7 @@ import argparse
 import shutil
 
 LRCLIB_URL = "https://lrclib.net/api/get"
+LRCLIB_FB_URL = "https://lrclib.net/api/search"
 POLL_INTERVAL = 0.25 # :3
 OFFSET_STEP = 0.25
 
@@ -155,7 +156,7 @@ class Lyse:
         os.makedirs(CACHE_DIR, exist_ok=True)
         key = re.sub(r"[^\w]+", "_", f"{artist}_{title}").strip("_").lower()
         cache_file = os.path.join(CACHE_DIR, f"{key}.json")
-
+    
         try:
             with open(cache_file) as f:
                 data = json.load(f)
@@ -166,32 +167,55 @@ class Lyse:
         except FileNotFoundError:
             pass
         except json.JSONDecodeError:
-            try: os.remove(cache_file) # nuke that
+            try: os.remove(cache_file)
             except: pass
-
+    
+        def _save_and_return(lyrics_text, synced):
+                if duration > 0:
+                    with open(cache_file, "w") as f:
+                        json.dump({"synced": synced, "lyrics": lyrics_text}, f)
+                if synced:
+                    return self._parse_lrc(lyrics_text), True
+                return [(0, l) for l in lyrics_text.splitlines()], False
+    
+        def _best_from_results(results):
+            for entry in results:
+                if entry.get("syncedLyrics"):
+                    return entry["syncedLyrics"], True
+            for entry in results:
+                if entry.get("plainLyrics"):
+                    return entry["plainLyrics"], False
+            return None, False
+            
         params = urllib.parse.urlencode({
             "track_name": title,
             "artist_name": artist,
             "album_name": album,
             "duration": int(duration),
         })
-
         try:
             with urllib.request.urlopen(f"{LRCLIB_URL}?{params}", timeout=6) as req:
                 data = json.loads(req.read())
-            if synced_lyrics := data.get("syncedLyrics"):
-                with open(cache_file, "w") as f:
-                    json.dump({"synced": True, "lyrics": synced_lyrics}, f)
-                return self._parse_lrc(synced_lyrics), True
+            if lrc := data.get("syncedLyrics"):
+                return _save_and_return(lrc, True)
             if plain := data.get("plainLyrics"):
-                with open(cache_file, "w") as f:
-                    json.dump({"synced": False, "lyrics": plain}, f)
-                return [(0, l) for l in plain.splitlines()], False
+                return _save_and_return(plain, False)
         except:
             pass
-
+    
+        # new fallback so it might find some shit for some songs
+        params = urllib.parse.urlencode({"q": f"{artist} {title}"})
+        try:
+            with urllib.request.urlopen(f"{LRCLIB_SEARCH_URL}?{params}", timeout=6) as req:
+                results = json.loads(req.read())
+            lrc, synced = _best_from_results(results)
+            if lrc:
+                return _save_and_return(lrc, synced)
+        except:
+            pass
+    
         return [(0, "no lyrics :(")], False
-
+        
     def _parse_lrc(self, lrc):
         lines = []
         for line in lrc.splitlines():
@@ -209,9 +233,11 @@ class Lyse:
                 prev_track = self.track
                 self.track = track
                 if track:
-                    id_changed    = track["track_id"] and track["track_id"] != self._last_id
-                    title_changed = track["title"] != (prev_track or {}).get("title")
-                    if id_changed or title_changed:
+                    id_changed      = track["track_id"] and track["track_id"] != self._last_id
+                    title_changed   = track["title"] != (prev_track or {}).get("title")
+                    duration_fixed  = track["duration"] > 0 and (prev_track or {}).get("duration", 0) == 0
+                    
+                    if id_changed or title_changed or (self._last_id == track["track_id"] and duration_fixed):
                         self._last_id = track["track_id"]
                         self.lyrics = [(0, "loading lyrics, hang on")]
                         self.synced = False
